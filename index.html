@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="malawigeo.js"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 300px;
+            right: 0;
+        }
+
+        #sidebar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 300px;
+            height: 100%;
+            background-color: #f8f9fa;
+            z-index: 1000;
+            padding: 20px;
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.2);
+            overflow-y: auto;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+        }
+        
+        #sidebar h4, #sidebar h5 {
+            margin-top: 15px;
+            margin-bottom: 5px;
+        }
+        
+        .header-container {
+            display: flex;
+            align-items: center; /* This centers items vertically */
+            margin-bottom: 20px;
+        }
+        
+        .header-container h4 {
+            margin: 0; /* Removes default margin from the h4 tag */
+            margin-left: 10px; /* Adds space between the logo and the title */
+        }
+
+        .leaflet-control {
+            z-index: 1001;
+        }
+        
+        #coords-display {
+            position: absolute;
+            bottom: 20px;
+            left: 310px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-family: 'Helvetica Neue', Arial, Helvetica, sans-serif;
+            font-size: 14px;
+            color: #333;
+        }
+
+        .legend {
+            line-height: 18px;
+            color: #555;
+            background-color: #fff;
+            padding: 6px 8px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+            border-radius: 5px;
+        }
+        .legend i {
+            width: 18px;
+            height: 18px;
+            float: left;
+            margin-right: 8px;
+            opacity: 0.7;
+            border-radius: 50%;
+        }
+    </style>
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Malawi Projects Map</title>
+</head>
+<body>
+    
+    <div id="sidebar">
+        <div class="header-container">
+            <img src="LOGO.png" alt="MEPA Logo" style="width: 80px;">
+            <h4>MEPA APPROVED PROJECT STATUS</h4>
+        </div>
+        
+        <h5>ESMP Reports</h5>
+        <div id="esmp-summary"></div>
+        <canvas id="esmpPieChart" style="margin-top: 20px;"></canvas>
+
+        <h5>ESIA Reports</h5>
+        <div id="esia-summary"></div>
+        <canvas id="esiaPieChart" style="margin-top: 20px;"></canvas>
+    </div>
+    
+    <div id="coords-display"></div>
+    <div id="map"></div>
+    
+    <script>
+        // Map Initialization
+        var map = L.map('map').setView([-13.254308, 34.301525], 7);
+
+        // Basemaps
+        var osm = L.tileLayer('https://api.maptiler.com/maps/openstreetmap/{z}/{x}/{y}.jpg?key=6D8m37RZjolxUW7EC05Q', {
+            attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>, Tiles &copy; <a href="https://www.maptiler.com/">MapTiler</a>'
+        }).addTo(map);
+
+        var satelliteWithLabels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, and the GIS User Community'
+        });
+
+        var OpenTopoMap = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+            maxZoom: 17,
+            attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)'
+        });
+
+        var positron = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, © <a href="https://carto.com/attributions">CARTO</a>'
+        });
+
+        // Malawi Boundary GeoJSON
+        var malawiBoundaryStyle = {
+            "color": "#000000",
+            "weight": 2,
+            "opacity": 0.65,
+            "fillOpacity": 0
+        };
+        L.geoJSON(malawigeo, { style: malawiBoundaryStyle }).addTo(map);
+
+        // Custom Icons
+        var redIcon = L.icon({
+            iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+            iconSize: [15, 25], iconAnchor: [7, 25], popupAnchor: [0, -25]
+        });
+
+        var blueIcon = L.icon({
+            iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+            iconSize: [15, 25], iconAnchor: [7, 25], popupAnchor: [0, -25]
+        });
+
+        // Layer Groups
+        var esmpLayerGroup = L.layerGroup();
+        var esiaLayerGroup = L.layerGroup();
+        esmpLayerGroup.addTo(map);
+        esiaLayerGroup.addTo(map);
+
+        // Project Data
+        var esmpData = [
+            { name: "Exporation of Gold at Matapila area, T/A Mazengera in Lilongwe district", lat: -13.998728, lng: 33.930796 },
+            { name: "Exploration of Heavy Mineras Sands at TA M'bwana Usisya Bay in NkhataBay", lat: -11.322966, lng: 34.252736 },
+            { name: "Mkanda Mineral Exploration Project in TA Kalolo, Chiseka and Malili in Lilongwe District", lat: -14.1507712, lng: 33.5350316 },
+            { name: "Construction and Operation of the Area 18 filling station along the presidential dual carriage road", lat: -13.9431204, lng: 33.7689256 },
+            { name: "Construction of Marshall Lodge, Chapima Heights, Blantyre City", lat: -15.7578574, lng: 35.0139124 },
+            { name: "Construction and Operation of Dzumila Filling Station Along the M1 Road in Chikwawa District", lat: -16.1317222, lng: 34.8425833 },
+            { name: "Exploration of Heavy Mineral Sands at Lake Chilwa and Chisi Island in Zomba District", lat: -15.25, lng: 35.75 },
+            { name: "Construction and Operation of Bwengu Mank Servive Station at Bwengu, Mzimba District", lat: -11.0546194, lng: 33.9220889 },
+            { name: "Construction and Operation of Mkukula Service Station at Mtengowanthenga in Dowa", lat: -14.0755656, lng: 33.8297129 },
+            { name: "B11 Recreation Building, Area 32 in Lilongwe", lat: -13.9506205, lng: 33.7749072 },
+            { name: "Construction and Operation of TA Service Station at Chikalusa Village, TA Chadza in Lilongwe", lat: -14.0894444, lng: 33.8741667 },
+            { name: "Diesel Storage Facility at Chiendausiku Campsite in Balaka", lat: -15.0086528, lng: 35.0695599 },
+            { name: "Construction and Operation of Takondwa Fuel Service Station at Area 25C in Lilongwe City", lat: -13.8961111, lng: 33.7702778 },
+            { name: "Construction and Operation of Kampepuza Service Station at Kampepuza Trading Centre in Ntcheu District", lat: -14.8686111, lng: 34.7397222 },
+            { name: "Construction of Bowe Service Station at Bowe Trading Centre in Dowa", lat: -13.2827778, lng: 33.6894444 },
+            { name: "Exploration of Gold, Rutile, Monazite, Illemenite and Graphite in T/A M'bwana and T/A Mkondowe in Usisya, NkhataBay", lat: -11.1055, lng: 34.120033 },
+            { name: "Exploration of Base Metals, Gold, Lithium, Platinum Group Metals, Lead, and Graphite in Lilongwe and Dowa", lat: -13.6762393, lng: 34.0326169 },
+            { name: "Mineral Exploration of Niobium, Graphite and Base Metals in Mzimba and Kasungu Districts", lat: -12.0463953, lng: 33.626779 },
+            { name: "Exploration of Titanium Minerals, Zircon, Graphite, Rare Earth Minerals and Kyanite at Kampini Area under TA Chingala Lilongwe", lat: -14.331562, lng: 33.8242068 },
+            { name: "Exploration of Coal at TA Kyungu Area in Karonga District", lat: -10.1345974, lng: 33.7946272 },
+            { name: "Exploration of Lithium and Pegmatite in TA Msamala in Balaka District", lat: -15.1252751, lng: 35.0233768 },
+            { name: "Exploration for Base Metals, Lead and Graphite in Lilongwe District", lat: -13.7392688, lng: 34.018446 },
+            { name: "Exploration of Graphite and Galena at TA Chimutu Area in Lilongwe District", lat: -13.8059442, lng: 33.9066924 },
+            { name: "Operation of Mtambo Borrow Pit at Mtambo Village, TA Kabudula in Lilongwe District", lat: -13.902409, lng: 33.6588891 },
+            { name: "Exploration of Base Metals, Lead, Lithium and Manganese in TA Chimutu in Lilongwe and TA Chiwere in Dowa District", lat: -13.7850554, lng: 33.9573887 },
+            { name: "Exploration of Base Metals, Galena, Lithium, Columbite, Zinc, Nickel and Manganese in TA Kasakula in Ntchisi District", lat: -13.4889505, lng: 33.9840854 },
+            { name: "Exploration of Niobium, Tantalum, Titamium, Graphite, Zircon, Gold, Monazite and Base Metals at TA Simlemba Area in Kasungu District", lat: -12.742866, lng: 33.593375 },
+            { name: "Exploration for Graphite, Lead, Platinum Group of Metals, Base Elements within Lilongwe and Dowa District", lat: -13.8966753, lng: 33.4878411 },
+            { name: "Exploration for Base Metals, Lead and Graphite Within TA Chiwere and TA Mkukula in Dowa District and a Small Part of TA Chimutu in Lilongwe District", lat: -13.9288944, lng: 33.4188446 },
+            { name: "Exploration of Aluminium, Copper, Graphite, Lead, Nickel, Niobium, Platinum, Rare Earth Elements, Rutile, Silver, Titanium and Zinc in TA Chiseka and Kalolo in Lilongwe District", lat: -14.1206265, lng: 33.5350316 },
+            { name: "Exploration of Uranium at TA Chapanaga in Chikwawa District", lat: -14.9687164, lng: 35.4520339 },
+            { name: "Exploration of Uranium and Coal in Karonga and Chitipa Districts TA Mwakaboko & Misuku", lat: -9.6395483, lng: 33.6527629 },
+            { name: "Exploration of Uranium and Rare Earth Elements at TA Kameme in Chitipa District", lat: -9.6379242, lng: 33.6525243 },
+            { name: "Exploration of Gold, Lithium, Quartz, Tourmaline, Base Metals, Mica, Rare Earth Elements in Nkhotakota and Mzimba District", lat: -12.576447, lng: 34.0497759 },
+            { name: "Small Scale Mining of Agate, Gold, Malachite, Opal and Zircon at TA Chapananga in Chikwawa District", lat: -15.8214838, lng: 34.3003892 },
+            { name: "Borrow Pit at Malangano Village, TA Mwase, Kasungu", lat: -13.0624384, lng: 33.4453921 },
+        ];
+        
+        var esiaData = [
+            { name: "Construction and Operation of A 20 MW Solar Farm with 6 MWH Battery Energy Storage System at Kapekenya village TA Malanda, NkhataBay", lat: -11.8140772, lng: 34.1759656 },
+            { name: "Construction of the African Centre of Excellence in Neglected and Underutilised Biodiversity (ACENUB) Complex at Mzuzu University", lat: -11.4213744, lng: 33.996848 },
+            { name: "Chiendausiku Rock Aggregate Quarry, Balaka", lat: -15.02395, lng: 35.122955 },
+            { name: "Medium scale Coal Mine in TA Mbenje, Nsanje", lat:-16.59922 , lng: 35.071588 },
+            { name: "Namitumbu Hill Quarry, Chiradzulu", lat: -15.56465, lng: 35.28259 },
+            { name: "Small Scale Granite Mining at TA Kaomba, Kasungu ", lat: -12.98025, lng: 33.47544 },
+        ];
+
+        // Add Markers to Map
+        esmpData.forEach(function(item) {
+            L.marker([item.lat, item.lng], { icon: blueIcon }).addTo(esmpLayerGroup).bindPopup(item.name);
+        });
+
+        esiaData.forEach(function(item) {
+            L.marker([item.lat, item.lng], { icon: redIcon }).addTo(esiaLayerGroup).bindPopup(item.name);
+        });
+
+        // Dashboard with Summary and Charts
+        var esmpSummaryText = `This year 2025, the Malawi Environment Protection Authority (MEPA) approved a total of <b>seventy four (74) ESMP</b> documents from January to date. The breakdown by sector is as follows:`;
+        document.getElementById('esmp-summary').innerHTML = esmpSummaryText;
+
+        // ESIA Charts Data
+        var esiaSummaryText = `The ESIA documents that were approved by the Board from January to date are <b>thirty (30)</b>. The breakdown by sector is as follows:`;
+        document.getElementById('esia-summary').innerHTML = esiaSummaryText;
+        
+        var esmpChartData = {
+            labels: ['Mining', 'Energy Sector', 'Public Infrastructure', 'Agriculture Development'],
+            datasets: [{
+                label: 'ESMP Documents',
+                data: [33, 21, 18, 2],
+                backgroundColor: [
+                    '#FF5733', '#3366FF', '#FFC300', '#33FFB5'
+                ],
+                borderColor: [
+                    '#FF5733', '#3366FF', '#FFC300', '#33FFB5'
+                ],
+                borderWidth: 1
+            }]
+        };
+
+        var ctxEsmpPie = document.getElementById('esmpPieChart').getContext('2d');
+        var myEsmpPieChart = new Chart(ctxEsmpPie, {
+            type: 'pie',
+            data: esmpChartData,
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'ESMP Percentage by Sector'
+                    }
+                }
+            }
+        });
+
+        
+        var esiaChartData = {
+            labels: ['Mining', 'Public Infrastructure', 'Agriculture Development', 'Water Resources Development', 'Energy'],
+            datasets: [{
+                label: 'ESIA Documents',
+                data: [14, 9, 3, 4, 1],
+                backgroundColor: [
+                    '#FF5733', '#3366FF', '#FFC300', '#33FFB5', '#8E44AD'
+                ],
+                borderColor: [
+                    '#FF5733', '#3366FF', '#FFC300', '#33FFB5', '#8E44AD'
+                ],
+                borderWidth: 1
+            }]
+        };
+
+        var ctxEsiaPie = document.getElementById('esiaPieChart').getContext('2d');
+        var myEsiaPieChart = new Chart(ctxEsiaPie, {
+            type: 'pie',
+            data: esiaChartData,
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'ESIA Percentage by Sector'
+                    }
+                }
+            }
+        });
+        
+        // Other Map Controls
+        var coordsDiv = document.getElementById('coords-display');
+        map.on('mousemove', function(e) {
+            var lat = e.latlng.lat.toFixed(4);
+            var lng = e.latlng.lng.toFixed(4);
+            coordsDiv.innerHTML = `Lat: ${lat}, Lng: ${lng}`;
+        });
+
+        var legend = L.control({ position: 'bottomright' });
+        legend.onAdd = function (map) {
+            var div = L.DomUtil.create('div', 'info legend');
+            div.innerHTML += '<h4>Project Status</h4>';
+            div.innerHTML += '<i style="background: #3388ff;"></i> Approved ESMPs<br>';
+            div.innerHTML += '<i style="background: #ff0000;"></i> Approved ESIA Reports<br>';
+            return div;
+        };
+        legend.addTo(map);
+
+        var baseLayers = {
+            "Street Map": osm,
+            "Satellite": satelliteWithLabels,
+            "Topographic Map": OpenTopoMap,
+            "Light Map": positron
+        };
+        var overlayLayers = {
+            "Approved ESMPs": esmpLayerGroup,
+            "Approved ESIA Reports": esiaLayerGroup
+        };
+        L.control.layers(baseLayers, overlayLayers).addTo(map);
+
+    </script>
+
+</body>
+</html>
